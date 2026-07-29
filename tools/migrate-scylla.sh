@@ -82,10 +82,7 @@ cmd_up() {
         fi
 
         echo "→ aplicando $version"
-        tmp="$(mktemp)"
-        render "$file" > "$tmp"
-        "${CQLSH[@]}" -f "$tmp"
-        rm -f "$tmp"
+        render "$file" | "${CQLSH[@]}"
         cql "INSERT INTO $SCYLLA_KEYSPACE.schema_migrations (version, sha256, applied_at)
              VALUES ('$version', '$sha', toTimestamp(now()));" > /dev/null
         applied=$((applied + 1))

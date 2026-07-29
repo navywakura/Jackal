@@ -30,7 +30,7 @@ export PGHOST PGPORT PGDATABASE PGUSER
 psql_q() { psql -v ON_ERROR_STOP=1 -q -t -A "$@"; }
 
 ensure_tracking_table() {
-    psql_q -c "
+    psql_q -c "SET client_min_messages=warning;
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version     text        PRIMARY KEY,
             sha256      text        NOT NULL,
