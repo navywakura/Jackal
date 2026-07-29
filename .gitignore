@@ -1,0 +1,42 @@
+# Entorno
+.env
+.env.local
+*.local
+
+# Node / React (FASE 4)
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Elixir / Phoenix (FASE 2)
+_build/
+deps/
+*.ez
+erl_crash.dump
+.elixir_ls/
+
+# Python / Flask (FASE 3)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Datos locales
+data/
+*.sqlite3
+
+# Secretos y material criptográfico
+*.pem
+*.key
+!*.key.example
+secrets/
+infra/coturn/turnserver.conf
+
+# Editores / SO
+.DS_Store
+.idea/
+.vscode/

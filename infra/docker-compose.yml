@@ -1,0 +1,130 @@
+# =============================================================================
+# Jackal — entorno de desarrollo
+#
+#   docker compose -f infra/docker-compose.yml up -d postgres scylla coturn
+#
+# Los servicios de aplicación (api, realtime, web) están declarados pero
+# comentados: se activan al llegar sus respectivas fases.
+#
+# ESTO ES SOLO PARA DESARROLLO. Contraseñas en el entorno, un solo nodo de
+# Scylla, sin TLS entre servicios. Nada de esto vale para producción.
+# =============================================================================
+
+name: jackal
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jackal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jackal}
+      POSTGRES_USER: ${POSTGRES_USER:-jackal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_dev}
+      # Acelera los tests; en producción esto sería temerario.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jackal} -d ${POSTGRES_DB:-jackal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  scylla:
+    image: scylladb/scylla:6.0
+    container_name: jackal-scylla
+    restart: unless-stopped
+    # --overprovisioned y --smp 1: Scylla asume por defecto que tiene la máquina
+    # entera y reserva CPU y memoria en consecuencia. En un portátil compartido
+    # con el resto del entorno eso lo vuelve inservible.
+    command: >
+      --smp 1
+      --memory 1G
+      --overprovisioned 1
+      --developer-mode 1
+      --api-address 0.0.0.0
+    ports:
+      - "127.0.0.1:9042:9042"
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE CLUSTER' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      # El primer arranque tarda: sin esto, docker compose lo da por muerto.
+      start_period: 90s
+
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: jackal-coturn
+    restart: unless-stopped
+    # network_mode host porque TURN necesita ver las IP reales de los clientes y
+    # asignar un rango amplio de puertos de relé. Con bridge, los candidatos ICE
+    # anunciarían direcciones internas del contenedor y no funcionaría nada.
+    network_mode: host
+    command: >
+      -n
+      --realm=${TURN_REALM:-jackal.local}
+      --listening-port=${TURN_PORT:-3478}
+      --min-port=49160 --max-port=49200
+      --use-auth-secret
+      --static-auth-secret=${TURN_STATIC_AUTH_SECRET:-change_me_turn_secret}
+      --no-tls --no-dtls
+      --no-multicast-peers
+      --no-cli
+      --log-file=stdout
+      --verbose
+    # --no-tls solo vale en desarrollo. En producción, TURNS sobre 5349 con
+    # certificado real: sin TLS, las redes que bloquean UDP tampoco dejarán
+    # pasar el relé.
+
+  minio:
+    image: minio/minio:latest
+    container_name: jackal-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-jackal}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-change_me_s3}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --- FASE 3 -----------------------------------------------------------------
+  # api:
+  #   build: ../apps/api
+  #   env_file: ../.env
+  #   ports: ["127.0.0.1:8000:8000"]
+  #   depends_on:
+  #     postgres: {condition: service_healthy}
+  #     minio:    {condition: service_healthy}
+
+  # --- FASE 2 -----------------------------------------------------------------
+  # realtime:
+  #   build: ../apps/realtime
+  #   env_file: ../.env
+  #   ports: ["127.0.0.1:4000:4000"]
+  #   depends_on:
+  #     postgres: {condition: service_healthy}
+  #     scylla:   {condition: service_healthy}
+
+  # --- FASE 4 -----------------------------------------------------------------
+  # web:
+  #   build: ../apps/web
+  #   ports: ["127.0.0.1:5173:5173"]
+
+volumes:
+  postgres_data:
+  scylla_data:
+  minio_data:
